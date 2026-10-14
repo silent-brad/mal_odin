@@ -1,116 +1,155 @@
 package reader
 
 /**
- * Tokenizer for S-expressions
+ * Tokenizer for S-expressions.
  *
- * Turns lines into tokens
+ * Token values are slices of the original input. Therefore, the input string
+ * must remain alive for as long as the returned tokens are used.
  */
 
-import "core:fmt"
-import "core:strings"
-import "core:strconv"
 import "core:unicode"
 import "core:unicode/utf8"
-import "core:log"
 
 Token :: enum {
-	SYMBOL,
-  IDENTIFIER,
-	NUMBER,
-	STRING,
-	LEFT_PAREN,
-	RIGHT_PAREN,
-}
-
-Value :: union {
-	int,
-	rune,
-	string,
+	Symbol,
+	Identifier,
+	Number,
+	String,
+	Left_Paren,
+	Right_Paren,
 }
 
 Atom :: struct {
 	type:  Token,
-	value: Value,
+	value: string,
 }
 
-tokenize :: proc(input: string, alloc := context.allocator) -> [dynamic]Atom {
-  tokens := make([dynamic]Atom, alloc)
-	for i := 0; i < len(input); i += 1 {
-    char := utf8.rune_at(input, i)
-		switch char {
-    case ';':
-      // Go until end of line
-      for ; i < len(input); i += 1 {
-        if input[i] == '\n' do break
-      }
+/**
+ * Decode the rune starting at byte offset `i` without advancing.
+ *
+ * The returned width is measured in bytes.
+ */
+peek_rune :: proc(input: string, i: int) -> (r: rune, width: int) {
+	if i >= len(input) do return 0, 0
+	return utf8.decode_rune(input[i:])
+}
+
+/**
+ * Decode the rune starting at byte offset `i`, then advance `i`
+ * by the rune's UTF-8 byte width.
+ */
+next_rune :: proc(input: string, i: ^int) -> (r: rune, width: int) {
+	r, width = peek_rune(input, i^)
+	i^ += width; return
+}
+
+/**
+ * Determine whether a rune may continue an identifier.
+ *
+ * Lisp identifiers commonly allow letters, digits, underscores, and
+ * hyphens after the first character.
+ */
+is_identifier_continue :: proc(r: rune) -> bool {
+	return unicode.is_alpha(r) || unicode.is_digit(r) || r == '_' || r == '-'
+}
+
+/**
+ * Tokenize an S-expression.
+ *
+ * The returned dynamic array owns only its Atom storage. Each Atom.value
+ * points into `input`, so destroying the token array does not require
+ * deleting individual token values.
+ */
+tokenize :: proc(
+	input: string,
+	allocator := context.allocator,
+) -> [dynamic]Atom {
+	tokens := make([dynamic]Atom, allocator)
+	i := 0
+	for i < len(input) {
+		r, width := peek_rune(input, i)
+		// Prevent an infinite loop if decoding ever returns no progress.
+		if width <= 0 { break }
+		switch r {
+		case ';':
+			// Skip everything through the next newline.
+			i += width
+			for i < len(input) {
+				comment_rune, comment_width := peek_rune(input, i)
+				if comment_width <= 0 do break
+				i += comment_width
+				if comment_rune == '\n' do break
+			}
+		case ' ', '\t', '\n', '\r': i += width
 		case '(':
-			append(&tokens, Atom{type = .LEFT_PAREN})
+			append(
+				&tokens,
+				Atom{type = .Left_Paren, value = input[i:i + width]},
+			)
+			i += width
 		case ')':
-			append(&tokens, Atom{type = .RIGHT_PAREN})
-		case ' ', '\t', '\n':
-      // Ignore whitespace
-    case '~': // Negative number
-      i += 1
+			append(
+				&tokens,
+				Atom{type = .Right_Paren, value = input[i:i + width]},
+			)
+			i += width
+		case '"':
+			// Exclude the surrounding quotes from the token value.
+			i += width
+			start := i
+			for i < len(input) {
+				string_rune, string_width := peek_rune(input, i)
+				if string_width <= 0 do break
+				if string_rune == '"' do break
+				// Skip an escaped rune so \" does not terminate the string.
+				// Escapes remain encoded in the source slice. They can be
+				// interpreted later when constructing the AST value.
+				if string_rune == '\\' {
+					i += string_width
+					if i < len(input) {
+						_, escaped_width := peek_rune(input, i)
+						if escaped_width <= 0 do break
+						i += escaped_width
+					}
+					continue
+				}
+				i += string_width
+			}
+			append(&tokens, Atom{type = .String, value = input[start:i]})
+			// Consume the closing quote, if one exists.
+			if i < len(input) {
+				closing_rune, closing_width := peek_rune(input, i)
+				if closing_rune == '"' {
+					i += closing_width}}
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			// Check if next character is number
-      numbers := strings.builder_make(alloc)
-
-      // Check if number is negative
-      // if utf8.rune_at(input, i - 1) == '~' do strings.write_rune(&numbers, '-')
-
-      strings.write_rune(&numbers, char)
-      for ; i < len(input); i += 1 {
-        new_char := utf8.rune_at(input, i + 1)
-        is_digit := unicode.is_digit(new_char)
-        if !is_digit do break
-        strings.write_rune(&numbers, new_char)
-      }
-
-      // TODO: decimal?
-
-      number, _ := strconv.parse_int(strings.to_string(numbers))
-
-			append(&tokens, Atom{type = .NUMBER, value = number})
-      strings.builder_destroy(&numbers)
-    case '"':
-      new_string := strings.builder_make(alloc)
-      i += 1
-      for ; i < len(input); i += 1 {
-        char := utf8.rune_at(input, i)
-        // Add string escape
-        // log.info(char)
-        // if char == '\\' && utf8.rune_at(input, i + 1) == '"' {
-        //   strings.write_rune(&new_string, '"')
-        //   i += 2
-        //   continue
-        // }
-        if char == '"' {
-          i += 1
-          break
-        }
-        strings.write_rune(&new_string, char)
-      }
-      append(&tokens, Atom{type = .STRING, value = strings.to_string(new_string)})
-      strings.builder_destroy(&new_string)
-    // TODO: Make sure you add '-' and '_'
-    case 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-         'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z':
-      identifier := strings.builder_make(alloc)
-      strings.write_rune(&identifier, char)
-      for ; i < len(input); i += 1 {
-        char = utf8.rune_at(input, i + 1)
-        is_alpha := unicode.is_alpha(char)
-        if !is_alpha do break
-        strings.write_rune(&identifier, char)
-      }
-      log.info(strings.to_string(identifier))
-      append(&tokens, Atom{type = .IDENTIFIER, value = strings.to_string(identifier)})
-      strings.builder_destroy(&identifier)
+			start := i
+			i += width
+			for i < len(input) {
+				number_rune, number_width := peek_rune(input, i)
+				if number_width <= 0 || !unicode.is_digit(number_rune) do break
+				i += number_width
+			}
+			append(&tokens, Atom{type = .Number, value = input[start:i]})
 		case '+', '-', '*', '/', '=':
-			append(&tokens, Atom{type = .SYMBOL, value = char})
-		case:
-			// Default?
-			fmt.println("Unknown character: {}", char)
+			start := i
+			i += width
+			append(&tokens, Atom{type = .Symbol, value = input[start:i]})
+		case: if unicode.is_alpha(r) || r == '_' {
+					start := i
+					i += width
+					for i < len(input) {
+						identifier_rune, identifier_width := peek_rune(
+							input,
+							i,
+						)
+						if identifier_width <= 0 || !is_identifier_continue(identifier_rune) do break
+						i += identifier_width
+					}
+					append(
+						&tokens,
+						Atom{type = .Identifier, value = input[start:i]},
+					)
+				} else do i += width // Unknown rune. Consume it so the tokenizer always progresses.
 		}
 	}
 	return tokens

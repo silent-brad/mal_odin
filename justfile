@@ -20,8 +20,8 @@ test:
     odin test repl
 
 fmt:
-    odin check .
-    odin strip-semicolon .
+    # odin check *.odin
+    # odin strip-semicolon *.odin
     odinfmt mal -w -config:odinfmt.json
     odinfmt ast -w -config:odinfmt.json
     odinfmt eval -w -config:odinfmt.json

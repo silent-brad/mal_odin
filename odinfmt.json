@@ -1,13 +1,18 @@
 {
-  "character_width": 100,
+  "character_width": 80,
   "tabs": true,
   "tabs_width": 4,
   "newline_limit": 1,
-  "convert_do": true,
+  "convert_do": false,
   "brace_style": "_1TBS",
   "indent_cases": false,
   "sort_imports": true,
-  "inline_single_stmt_case": false,
+  "inline_single_stmt_case": true,
+  "space_around_operator": true,
   "spaces_around_colons": false,
+  "spaces_around_brackets": false,
+  "spaces_around_parens": false,
+  "trailing_commas": true,
+  "trim_blocks": true,
   "space_single_line_blocks": true
 }
