@@ -12,7 +12,6 @@ import "core:unicode/utf8"
 
 Token :: enum {
 	Symbol,
-	Identifier,
 	Number,
 	String,
 	Left_Paren,
@@ -119,8 +118,8 @@ tokenize :: proc(
 			// Consume the closing quote, if one exists.
 			if i < len(input) {
 				closing_rune, closing_width := peek_rune(input, i)
-				if closing_rune == '"' {
-					i += closing_width}}
+				if closing_rune == '"' do i += closing_width
+			}
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			start := i
 			i += width
@@ -134,20 +133,18 @@ tokenize :: proc(
 			start := i
 			i += width
 			append(&tokens, Atom{type = .Symbol, value = input[start:i]})
-		case: if unicode.is_alpha(r) || r == '_' {
+
+		case: if unicode.is_alpha(r) || r == '_' || r == ':' {
 					start := i
 					i += width
 					for i < len(input) {
-						identifier_rune, identifier_width := peek_rune(
-							input,
-							i,
-						)
-						if identifier_width <= 0 || !is_identifier_continue(identifier_rune) do break
-						i += identifier_width
+						symbol_rune, symbol_width := peek_rune(input, i)
+						if symbol_width <= 0 || !is_identifier_continue(symbol_rune) do break
+						i += symbol_width
 					}
 					append(
 						&tokens,
-						Atom{type = .Identifier, value = input[start:i]},
+						Atom{type = .Symbol, value = input[start:i]},
 					)
 				} else do i += width // Unknown rune. Consume it so the tokenizer always progresses.
 		}

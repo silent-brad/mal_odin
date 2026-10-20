@@ -4,6 +4,7 @@
 
   - [x] Make `reader.odin`
   - [x] Tests (`reader_test.odin`)
+  - [x] Break up into smaller functions
   - [ ] Polish up
 
 - [.] Step 2: AST

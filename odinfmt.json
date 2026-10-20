@@ -14,5 +14,8 @@
   "spaces_around_parens": false,
   "trailing_commas": true,
   "trim_blocks": true,
-  "space_single_line_blocks": true
+  "space_single_line_blocks": true,
+  "space_before_brace": true,
+  "always_break_after_definition": true,
+  "end_with_newline": true
 }
